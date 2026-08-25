@@ -53,9 +53,10 @@ const options = {
 	external: [
 		"obsidian",
 		"electron",
+		"node:fs",
 		...builtinModules],
 	format: 'cjs',
-	target: 'es2018',
+	target: 'es2021',
 	logLevel: "info",
 	sourcemap: prod ? false : 'inline',
 	minify: prod ? true : false,

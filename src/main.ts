@@ -4,7 +4,7 @@ import { App, Plugin, PluginSettingTab, Setting, MarkdownPostProcessorContext, n
 	import factory = require("./pick.js");
 	Evade node.js
 */
-import { default as wasmbin } from './pick.wasm';
+import createPikchr, { type Pikchr } from "./pikchr";
 
 declare module "obsidian" {
 	interface Vault {
@@ -12,47 +12,6 @@ declare module "obsidian" {
 		getConfig: (config: string) => string;
 	}
 }
-
-export const import_env = {
-    memoryBase: 0,
-    tableBase: 1024*32,
-    memory: new WebAssembly.Memory({
-      initial: 0
-    }),
-    table: new WebAssembly.Table({
-      initial: 0,
-      element: 'anyfunc'
-    })
-  } 
-
-/* Some glue meh */
-export const textEncoder = new TextEncoder();
-export const textDecoder = new TextDecoder('utf8');
-export const createCString = (module, str) => {
-		const nullTerminatedString = str + "\0";
-		const encodedString = textEncoder.encode(nullTerminatedString);
-		const address = module.instance.exports.malloc(encodedString.length);
-		try {
-			const destination = new Uint8Array(module.instance.exports.memory.buffer, address);
-			destination.set(encodedString);
-			
-		} finally {
-			return address;
-		}
-	};
-export const readStaticCString = (module, address) => {
-		const buffer = module.instance.exports.memory.buffer;
-		const encodedStringLength = (new Uint8Array(buffer, address)).indexOf(0);
-		const encodedStringBuffer = new Uint8Array(buffer, address, encodedStringLength);
-		return textDecoder.decode(encodedStringBuffer);
-	};
-export const receiveCString = (module, address) => {
-		try {
-			return readStaticCString(module, address);
-		} finally {
-			module.instance.exports.free(address);
-		}
-	};
 
 export interface AdamantinePickSettings {
 	block_identify: string[];
@@ -116,12 +75,10 @@ export class AdamantinePickProcessor implements Processor {
 	postprocessor: AdamantinePickPostProcessor;
 	prepend: string;
 	parser: DOMParser;
-	pikchr: string;
+	pikchr: Pikchr.Instance;
 	get_height: number;
 	get_width: number;
 	get_artifact_version: string;
-	factory: WebAssemblyInstantiatedSource;
-	dom_class_ptr:number;
 	
 	constructor(render_type: number, mFlags: number, dom_mark: string, report: boolean, preserve: boolean) {
 		this.render_type = render_type;
@@ -133,24 +90,10 @@ export class AdamantinePickProcessor implements Processor {
 		this.diagram_height = 0;
 		this.diagram_width = 0;
 		this.prepend = "";
-		WebAssembly.instantiate(wasmbin, import_env).then( (factory) => {
-				this.pikchr = factory.instance.exports.pick;
-				this.get_height = factory.instance.exports.pick_height;
-				this.get_width = factory.instance.exports.pick_width;
-				this.get_artifact_version = factory.instance.exports.pick_version;
-				this.factory = factory;
-				this.dom_class_ptr = createCString(this.factory, this.dom_mark);
-			})
-			.catch((error) => {
-				console.error(error);
-			});
-	
+		createPikchr()
+			.then((pikchr) => { this.pikchr = pikchr; })
+			.catch((error) => { console.error(error); });
 		this.parser = new DOMParser();
-	}
-	
-	update_dom_mark() {
-		this.factory.instance.exports.free(this.dom_class_ptr);
-		this.dom_class_ptr = createCString(this.factory, this.dom_mark);
 	}
 	
 	dummy = (source: string, el: HTMLElement, ctx: MarkdownPostProcessorContext) => {
@@ -171,7 +114,6 @@ export class AdamantinePickProcessor implements Processor {
 	}
 	
     svg = (source: string, el: HTMLElement, ctx: MarkdownPostProcessorContext) => {
-		const factory = this.factory;
 		/* 
 		   Space or newline at the end of file in reading mode in source at the end of codeblock 
 		   Source are different strings in reading and editing mode lol
@@ -189,9 +131,6 @@ export class AdamantinePickProcessor implements Processor {
 			prepend = hashtable[source];
 			if (!prepend) {
 				if (command === "#?skip") { prepend = "skip"; skip = true; }
-				if (command === "#?diag") {
-					prepend = 'print ' + '"Pikchr SHA-3: ' + readStaticCString(factory,this.get_artifact_version()) + '"' + "\n";
-				}
 				if (command === "#?purple") {prepend = "fill=purple\n";}
 				hashtable[source] = prepend;
 			}
@@ -203,13 +142,15 @@ export class AdamantinePickProcessor implements Processor {
 
 		skip = (prepend === "skip");
 		if (prepend && !skip) { source_final = prepend + source; }
-		if ( (command !== "#?skip") || (!skip))  {	
-				encodedDiagram = receiveCString(factory,this.pikchr(createCString(factory, source_final),this.dom_class_ptr,this.dark_mode));						
+		if ((command !== "#?skip") || (!skip)) {
+			const result = this.pikchr.pikchr(source_final,
+			  { class: this.dom_mark, dark_mode: (this.dark_mode == 2) });
+			encodedDiagram = result.output;
+			this.diagram_height = result.height;
+			this.diagram_width = result.width;
 		}
-		
+
 		this.encodedDiagram = encodedDiagram;
-		this.diagram_height = this.get_height(0);
-		this.diagram_width = this.get_width(0);
 		this.diagram_handler (encodedDiagram, el, ctx);		
 	}
 	
@@ -381,7 +322,6 @@ export default class AdamantinePickPlugin extends Plugin {
 		this.diagram_processor.render_type = this.settings.encoder_type;
 		this.diagram_processor.dark_mode = this.get_dark_mode_flag();
 		this.diagram_processor.dom_mark = this.settings.output_dom_mark;
-		this.diagram_processor.update_dom_mark();
 		this.diagram_processor.report = this.settings.output_diagram_stats;
 		this.diagram_processor.preserve_diagram_debug_print = this.settings.preserve_diagram_debug_print;
 	
