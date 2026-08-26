@@ -4,7 +4,10 @@ import { App, Plugin, PluginSettingTab, Setting, MarkdownPostProcessorContext, n
 	import factory = require("./pick.js");
 	Evade node.js
 */
-import createPikchr, { type Pikchr } from "./pikchr";
+import createPikchr, { type Pikchr } from "./pikchr_wasm.js";
+
+// @ts-expect-error Cannot find module
+import { default as pikchrWASM } from "./pikchr_wasm.wasm";
 
 declare module "obsidian" {
 	interface Vault {
@@ -80,7 +83,7 @@ export class AdamantinePickProcessor implements Processor {
 	get_width: number;
 	get_artifact_version: string;
 	
-	constructor(render_type: number, mFlags: number, dom_mark: string, report: boolean, preserve: boolean) {
+	constructor(pikchr: Pikchr.Instance, render_type: number, mFlags: number, dom_mark: string, report: boolean, preserve: boolean) {
 		this.render_type = render_type;
 		this.dark_mode = mFlags;
 		this.dom_mark = dom_mark;
@@ -90,9 +93,7 @@ export class AdamantinePickProcessor implements Processor {
 		this.diagram_height = 0;
 		this.diagram_width = 0;
 		this.prepend = "";
-		createPikchr()
-			.then((pikchr) => { this.pikchr = pikchr; })
-			.catch((error) => { console.error(error); });
+		this.pikchr = pikchr;
 		this.parser = new DOMParser();
 	}
 	
@@ -248,8 +249,17 @@ export default class AdamantinePickPlugin extends Plugin {
 		const report = this.settings.output_diagram_stats;
 		const preserve = this.settings.preserve_diagram_debug_print;
 		const render_type = this.settings.encoder_type;
-		
-		this.diagram_processor = new AdamantinePickProcessor(render_type, dark_mode_flag, dom_mark, report, preserve);
+		const pikchr = await createPikchr({
+				locateFile: (path: string, prefix: string) => {
+					if (path == "pikchr_wasm.wasm") {
+						return pikchrWASM;
+					}
+
+					return prefix + path;
+				}
+			});
+
+		this.diagram_processor = new AdamantinePickProcessor(pikchr, render_type, dark_mode_flag, dom_mark, report, preserve);
 		this.diagram_processor.plugin_ptr = this;
 		this.banshee = new AdamantinePickPostProcessor(this.diagram_processor, dom_mark);
 		
