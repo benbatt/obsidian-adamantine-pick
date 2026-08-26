@@ -20,7 +20,7 @@ const options = {
 	},
 	entryPoints: ['src/main.ts'],
 	bundle: true,
-	loader: { ".wasm": "dataurl" },
+	loader: { ".wasm": "binary" },
 	external: [
 		"obsidian",
 		"electron",

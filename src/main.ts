@@ -250,12 +250,9 @@ export default class AdamantinePickPlugin extends Plugin {
 		const preserve = this.settings.preserve_diagram_debug_print;
 		const render_type = this.settings.encoder_type;
 		const pikchr = await createPikchr({
-				locateFile: (path: string, prefix: string) => {
-					if (path == "pikchr_wasm.wasm") {
-						return pikchrWASM;
-					}
-
-					return prefix + path;
+				instantiateWasm: async (imports, successCallback) => {
+					const { instance, module } = await WebAssembly.instantiate(pikchrWASM, imports);
+					successCallback(instance, module);
 				}
 			});
 
