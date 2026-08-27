@@ -7,7 +7,7 @@ import { App, Plugin, PluginSettingTab, Setting, MarkdownPostProcessorContext, n
 import createPikchr, { type Pikchr } from "./pikchr_wasm.js";
 
 // @ts-expect-error Cannot find module
-import { default as pikchrWASM } from "./pikchr_wasm.wasm";
+import pikchrWASM from "./pikchr_wasm.wasm";
 
 declare module "obsidian" {
 	interface Vault {
@@ -249,9 +249,10 @@ export default class AdamantinePickPlugin extends Plugin {
 		const report = this.settings.output_diagram_stats;
 		const preserve = this.settings.preserve_diagram_debug_print;
 		const render_type = this.settings.encoder_type;
+		type SuccessCallback = (instance: WebAssembly.Instance, module: WebAssembly.Module) => void;
 		const pikchr = await createPikchr({
-				instantiateWasm: async (imports, successCallback) => {
-					const { instance, module } = await WebAssembly.instantiate(pikchrWASM, imports);
+				instantiateWasm: async (imports: WebAssembly.Imports | undefined, successCallback: SuccessCallback) => {
+					const { instance, module } = await WebAssembly.instantiate(pikchrWASM as BufferSource, imports);
 					successCallback(instance, module);
 				}
 			});
