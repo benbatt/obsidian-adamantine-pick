@@ -1,4 +1,5 @@
-import { App, Plugin, PluginSettingTab, Setting, MarkdownPostProcessorContext, normalizePath, requestUrl, RequestUrlParam, RequestUrlResponse } from "obsidian";
+import { App, Plugin, PluginSettingTab, Setting, SettingDefinitionItem, MarkdownPostProcessorContext, normalizePath,
+  requestUrl, RequestUrlParam, RequestUrlResponse } from "obsidian";
 /*
 	declare function require(name:string);
 	import factory = require("./pick.js");
@@ -17,7 +18,7 @@ declare module "obsidian" {
 }
 
 export interface AdamantinePickSettings {
-	block_identify: string[];
+	block_identifier: string;
 	output_dom_mark: string;
 	encoder_type: number;
 	sample_to_render: number;
@@ -31,7 +32,7 @@ export interface AdamantinePickSettings {
 }
 
 export const DEFAULT_SETTINGS: AdamantinePickSettings = {
-	block_identify: [ 'pikchr', 'pick' ],
+	block_identifier: 'pikchr',
 	output_dom_mark: 'adamantine',
 	encoder_type: 1,
 	sample_to_render: 4,
@@ -261,7 +262,7 @@ export default class AdamantinePickPlugin extends Plugin {
 		this.diagram_processor.plugin_ptr = this;
 		this.banshee = new AdamantinePickPostProcessor(this.diagram_processor, dom_mark);
 		
-		this.registerMarkdownCodeBlockProcessor(this.settings.block_identify[0], this.diagram_processor.encoder);
+		this.registerMarkdownCodeBlockProcessor(this.settings.block_identifier, this.diagram_processor.encoder);
 		this.registerMarkdownPostProcessor(this.banshee.svg);	
 		this.registerEvent(this.app.workspace.on('file-open', () => { this.banshee.counter = 0; this.banshee.visited = {}; }));
 		
@@ -592,12 +593,12 @@ export class AdamantinePickSettingsTab extends PluginSettingTab {
 			.setDesc('What Markdown code blocks to render (requires plugin reload)')
 			.addText(text => text
 				.setPlaceholder('pikchr pick')
-				.setValue(this.plugin.settings.block_identify[0])
+				.setValue(this.plugin.settings.block_identifier)
 				.onChange(async (value) => {
 					let valid = value.split(" ")[0];
 					if (valid.length > 1024) {valid = "pikchr"; }
 					console.debug('md block id:' + valid);
-					this.plugin.settings.block_identify[0] = valid; 
+					this.plugin.settings.block_identifier = valid; 
 					await this.plugin.saveSettings();
 				}));
 		
@@ -649,5 +650,99 @@ export class AdamantinePickSettingsTab extends PluginSettingTab {
 					await this.plugin.saveSettings();
 				});
 			});
+	}
+
+	getSettingDefinitions(): SettingDefinitionItem<string>[] {
+		const rejectSpaces = (value: string) => /\s/.test(value) ? "Cannot contain spaces" : undefined;
+
+		return [
+			{
+				name: 'Encoder',
+				desc: 'Render type',
+				render: (setting) => {
+					setting.addDropdown(dropDown => {
+						dropDown.addOption('1', 'SVG');
+						dropDown.addOption('2', 'Text');
+						dropDown.addOption('3', 'Dummy');
+						dropDown.setValue(this.plugin.settings.encoder_type.toString());
+						dropDown.onChange(async (value) =>	{
+							console.debug('render type: ' + value);
+							this.plugin.settings.encoder_type = parseInt(value);
+							await this.plugin.saveSettings();
+						});
+					});
+				},
+			},
+			{
+				name: 'Sample',
+				desc: 'Create once one builtin sample diagram note (requires plugin reload)',
+				render: (setting) => {
+					setting.addDropdown(dropDown => {
+						dropDown.addOption('1', 'Cheat sheet');
+						dropDown.addOption('2', 'Palindrome');
+						dropDown.addOption('3', 'Triforce');
+						dropDown.addOption('4', 'None');
+						dropDown.setValue(this.plugin.settings.sample_to_render.toString());
+						dropDown.onChange(async (value) =>	{
+							console.debug('render builtin sample: ' + value);
+							this.plugin.settings.sample_to_render = parseInt(value);
+							await this.plugin.saveSettings();
+						});
+					});
+				},
+			},
+			{
+				name: 'Theme',
+				desc: 'Bleach background for PDF export (printing)',
+				control: {
+					type: 'toggle',
+					key: 'bleach_diagram',
+				}
+			},
+			{
+				name: 'Markdown code block identifier',
+				desc: 'What Markdown code blocks to render (requires plugin reload)',
+				control: {
+					type: 'text',
+					key: 'block_identifier',
+					placeholder: 'pikchr',
+					validate: rejectSpaces,
+				}
+			},
+			{
+				name: 'DOM class of output',
+				desc: 'Mark DOM class of pikchr output',
+				control: {
+					type: 'text',
+					key: 'output_dom_mark',
+					placeholder: 'adamantine',
+					validate: rejectSpaces,
+				},
+			},
+			{
+				name: 'Preserve diagram debug print',
+				desc: 'Preserve inner diagram print calls that outputs lines before DOM SVG element',
+				control: {
+					type: 'toggle',
+					key: 'preserve_diagram_debug_print',
+				},
+			},
+			{
+				name: 'Report status message after diagram into note',
+				desc: 'Show height(px) width(px) size(byte) time(ms)',
+				control: {
+					type: 'toggle',
+					key: 'output_diagram_stats',
+				},
+			},
+			{
+				name: 'Use local adamantine diagram notes JSON',
+				desc: 'Load admantine-diagram-notes.json from plugin folder (for debug testing)',
+				control: {
+					type: 'toggle',
+					key: 'decode_locally',
+				},
+			},
+		];
 	}
 }
